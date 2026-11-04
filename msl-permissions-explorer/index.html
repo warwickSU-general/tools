@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MSL Permissions Explorer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow centred column — title, two tabs, a search field, then a plain list */
+:root{
+  --bg:#fbfbfc; --ink:#1b2029; --muted:#6b7380; --faint:#9aa1ad; --line:#e6e8ec; --hover:#f2f3f6; --accent:#3552b8;
+  --f:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14171c; --ink:#e8eaee; --muted:#9aa1ad; --faint:#6b7380; --line:#2a2f38; --hover:#1d2128; --accent:#93a6ee; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14171c; --ink:#e8eaee; --muted:#9aa1ad; --faint:#6b7380; --line:#2a2f38; --hover:#1d2128; --accent:#93a6ee; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f);font-size:15px;line-height:1.5}
+.wrap{max-width:720px;margin:0 auto;padding-block:48px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:28px}
+h1{font-size:22px;font-weight:600;margin:0;letter-spacing:-.01em}
+h2{font-size:20px;font-weight:600;margin:0}
+p{margin:0}
+.muted{color:var(--muted)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tabs{display:flex;gap:24px;border-bottom:1px solid var(--line)}
+.tab{appearance:none;background:none;border:0;border-bottom:2px solid transparent;padding:0 0 10px;color:var(--muted);cursor:pointer;font-weight:500}
+.tab[aria-selected="true"]{color:var(--ink);border-color:var(--ink)}
+.view{display:flex;flex-direction:column;gap:24px}
+.picker{position:relative}
+.field{width:100%;padding:12px 0;border:0;border-bottom:1px solid var(--line);background:transparent;font-size:17px;border-radius:0}
+.field:focus{outline:none;border-color:var(--ink)}
+.field::placeholder{color:var(--faint)}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 6px);background:var(--bg);border:1px solid var(--line);border-radius:8px;max-height:320px;overflow:auto;z-index:5;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+.sugg button{display:flex;justify-content:space-between;gap:12px;width:100%;text-align:left;background:none;border:0;padding:9px 12px;cursor:pointer}
+.sugg button:hover,.sugg button.on{background:var(--hover)}
+.sugg small{color:var(--muted);text-align:right}
+.head{display:flex;flex-direction:column;gap:2px}
+.controls{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+select{padding:6px 28px 6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);max-width:100%}
+.check{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:14px;cursor:pointer}
+.list{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.item{display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px solid var(--line);align-items:baseline}
+.item .r{color:var(--muted);font-size:14px;text-align:right}
+details{border-bottom:1px solid var(--line)}
+summary{display:flex;justify-content:space-between;gap:16px;padding:11px 0;cursor:pointer;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+";color:var(--faint);width:18px;flex:none}
+details[open]>summary::before{content:"−"}
+summary span:first-of-type{flex:1}
+summary .r{color:var(--muted);font-size:14px}
+.inner{padding:0 0 12px 34px;display:flex;flex-direction:column;gap:4px;font-size:14px}
+.inner div{display:flex;justify-content:space-between;gap:12px}
+.inner .via{color:var(--faint);font-size:13px;text-align:right}
+.lnk{appearance:none;background:none;border:0;padding:0;cursor:pointer;text-align:left;color:inherit}
+.lnk:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.empty{color:var(--muted);font-size:14px}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <h1>MSL Permissions</h1>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" id="t-roles" data-v="roles">Roles</button>
+    <button class="tab" role="tab" id="t-orgs" data-v="orgs">Organisations</button>
+  </nav>
+
+  <section id="v-roles" class="view" hidden>
+    <div class="picker">
+      <input class="field" id="roleQ" type="search" autocomplete="off" placeholder="Search a role" aria-label="Search a role">
+      <div class="sugg" id="roleSugg" hidden></div>
+    </div>
+    <div id="roleOut" class="view"></div>
+  </section>
+
+  <section id="v-orgs" class="view" hidden>
+    <div class="picker">
+      <input class="field" id="orgQ" type="search" autocomplete="off" placeholder="Search an organisation" aria-label="Search an organisation">
+      <div class="sugg" id="orgSugg" hidden></div>
+    </div>
+    <div id="orgOut" class="view"></div>
+  </section>
+</div>
+
+<script src="data.js"></script>
+<script>
+const D = window.MSL_DATA;
+const $ = s => document.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) { if (v == null) continue; if (k === 'class') e.className = v; else if (k === 'text') e.textContent = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v); } for (const k of kids) if (k != null) e.append(typeof k === 'string' ? document.createTextNode(k) : k); return e; };
+const fmt = n => n.toLocaleString('en-GB');
+
+// ---------- model ----------
+const ORG = D.orgs.map(([id, name, type, cat, parent], i) => ({ i, name, type, parent }));
+const PERM = D.perms.map(([name], i) => ({ i, name }));
+const byName = (a, b) => PERM[a].name.localeCompare(PERM[b].name);
+const decode = s => [...s].map(c => { const n = c.charCodeAt(0); return (n > 92 ? n - 1 : n) - 48; });
+const ROLE = D.roles.map(([name, team], i) => ({ i, name, team, grants: [] }));
+const grantsAt = ORG.map(() => []);
+D.grants.forEach(([r, t, all, casc]) => { const g = { r, t, all: decode(all), casc: new Set(decode(casc)) }; ROLE[r].grants.push(g); grantsAt[t].push(g); });
+const kids = ORG.map(() => 0); ORG.forEach(o => { if (o.parent != null) kids[o.parent]++; });
+const pathOf = i => { const p = []; let c = ORG[i]; while (c) { p.unshift(c.i); c = c.parent != null ? ORG[c.parent] : null; } return p; };
+
+// ---------- tabs ----------
+function show(v) { if (v !== 'orgs') v = 'roles'; ['roles', 'orgs'].forEach(x => { $('#v-' + x).hidden = x !== v; $('#t-' + x).setAttribute('aria-selected', x === v); }); }
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => { history.replaceState(null, '', '#' + t.dataset.v); show(t.dataset.v); }));
+addEventListener('hashchange', () => show(location.hash.slice(1)));
+
+// ---------- search ----------
+function picker(input, box, items, onPick) {
+  let cur = [], ci = -1;
+  input.addEventListener('input', () => {
+    const s = input.value.trim().toLowerCase(); box.textContent = ''; ci = -1;
+    if (!s) { box.hidden = true; return; }
+    const w = s.split(/\s+/);
+    cur = items.filter(x => w.every(t => x.key.includes(t))).sort((a, b) => (a.label.toLowerCase().startsWith(s) ? 0 : 1) - (b.label.toLowerCase().startsWith(s) ? 0 : 1) || b.weight - a.weight || a.label.localeCompare(b.label)).slice(0, 30);
+    cur.forEach((x, k) => box.append(el('button', { onmousedown: e => { e.preventDefault(); pick(k); } }, el('span', { text: x.label }), el('small', { text: x.sub }))));
+    if (!cur.length) box.append(el('div', { class: 'empty', style: 'padding:10px 12px', text: 'No matches' }));
+    box.hidden = false;
+  });
+  const pick = k => { const x = cur[k]; if (!x) return; box.hidden = true; input.blur(); onPick(x.i); };
+  input.addEventListener('keydown', e => {
+    const bs = [...box.querySelectorAll('button')];
+    if (e.key === 'ArrowDown') ci = Math.min(bs.length - 1, ci + 1); else if (e.key === 'ArrowUp') ci = Math.max(0, ci - 1); else if (e.key === 'Enter') { pick(ci < 0 ? 0 : ci); return; } else if (e.key === 'Escape') { box.hidden = true; return; } else return;
+    e.preventDefault(); bs.forEach((b, k) => b.classList.toggle('on', k === ci)); bs[ci]?.scrollIntoView({ block: 'nearest' });
+  });
+  input.addEventListener('focus', () => input.select());
+  input.addEventListener('blur', () => setTimeout(() => box.hidden = true, 120));
+}
+
+// ---------- roles ----------
+picker($('#roleQ'), $('#roleSugg'), ROLE.map(r => ({ i: r.i, label: r.name, sub: ORG[r.team].name, key: (r.name + ' ' + ORG[r.team].name).toLowerCase(), weight: r.grants.reduce((s, g) => s + g.all.length * (1 + kids[g.t]), 0) })), i => { $('#roleQ').value = ''; showRole(i); });
+function showRole(ri) {
+  const R = ROLE[ri], out = $('#roleOut'); out.textContent = '';
+  const byPerm = new Map();
+  R.grants.forEach(g => g.all.forEach(p => { if (!byPerm.has(p)) byPerm.set(p, []); byPerm.get(p).push({ t: g.t, down: g.casc.has(p) && kids[g.t] > 0 }); }));
+  out.append(el('div', { class: 'head' }, el('h2', { text: R.name }), el('p', { class: 'muted', text: `${ORG[R.team].name} · ${byPerm.size} permission${byPerm.size === 1 ? '' : 's'}` })));
+  const list = el('div', { class: 'list' });
+  [...byPerm.keys()].sort(byName).forEach(p => {
+    const where = byPerm.get(p).map(x => ORG[x.t].name + (x.down ? ' + inside' : '')).join(', ');
+    list.append(el('div', { class: 'item' }, el('span', { text: PERM[p].name }), el('span', { class: 'r', text: where })));
+  });
+  if (!byPerm.size) list.append(el('p', { class: 'empty', text: 'No permissions' }));
+  out.append(list);
+}
+
+// ---------- orgs ----------
+let curOrg = null;
+picker($('#orgQ'), $('#orgSugg'), ORG.map(o => ({ i: o.i, label: o.name, sub: o.type, key: o.name.toLowerCase(), weight: kids[o.i] })), i => { $('#orgQ').value = ''; curOrg = i; perm = 'all'; renderOrg(); });
+let perm = 'all', inherited = true;
+function access(i) { // Map perm -> [{r, src}]
+  const m = new Map(), seen = new Set();
+  for (const a of pathOf(i).reverse()) for (const g of grantsAt[a]) (a === i ? g.all : [...g.casc]).forEach(p => {
+    const k = g.r + ':' + p; if (seen.has(k)) return; seen.add(k);
+    if (!m.has(p)) m.set(p, []); m.get(p).push({ r: g.r, src: a });
+  });
+  return m;
+}
+function renderOrg() {
+  const out = $('#orgOut'); out.textContent = '';
+  if (curOrg == null) return;
+  const o = ORG[curOrg], acc = access(curOrg);
+  const parents = pathOf(curOrg).slice(0, -1).map(a => ORG[a].name).join(' › ');
+  out.append(el('div', { class: 'head' }, el('h2', { text: o.name }), el('p', { class: 'muted', text: parents ? `${o.type} · in ${parents}` : o.type })));
+
+  const sel = el('select', { 'aria-label': 'Permission', id: 'permSel' }, el('option', { value: 'all', text: 'All permissions' }), ...[...acc.keys()].sort(byName).map(p => el('option', { value: String(p), text: PERM[p].name })));
+  sel.value = perm; sel.addEventListener('change', () => { perm = sel.value; renderOrg(); });
+  const cb = el('input', { type: 'checkbox', id: 'inhChk' }); cb.checked = inherited; cb.addEventListener('change', () => { inherited = cb.checked; renderOrg(); });
+  out.append(el('div', { class: 'controls' }, sel, el('label', { class: 'check', for: 'inhChk' }, cb, 'Include inherited')));
+
+  const list = el('div', { class: 'list' });
+  const perms = [...acc.keys()].filter(p => perm === 'all' || String(p) === perm).sort(byName);
+  const rolesFor = p => acc.get(p).filter(x => inherited || x.src === curOrg).sort((a, b) => (a.src === curOrg ? 0 : 1) - (b.src === curOrg ? 0 : 1) || ROLE[a.r].name.localeCompare(ROLE[b.r].name));
+  const roleRow = x => el('div', {}, el('button', { class: 'lnk', text: ROLE[x.r].name + (ROLE[x.r].team !== curOrg ? ' · ' + ORG[ROLE[x.r].team].name : ''), onclick: () => { history.replaceState(null, '', '#roles'); show('roles'); showRole(x.r); scrollTo({ top: 0 }); } }), x.src !== curOrg ? el('span', { class: 'via', text: 'via ' + ORG[x.src].name }) : null);
+  let n = 0;
+  perms.forEach(p => {
+    const rs = rolesFor(p); if (!rs.length) return; n++;
+    const d = el('details', {}, el('summary', {}, el('span', { text: PERM[p].name }), el('span', { class: 'r', text: `${rs.length} role${rs.length === 1 ? '' : 's'}` })), el('div', { class: 'inner' }, ...rs.map(roleRow)));
+    if (perm !== 'all') d.open = true;
+    list.append(d);
+  });
+  if (!n) list.append(el('p', { class: 'empty', style: 'padding-top:12px', text: 'Nothing given directly here. Tick "Include inherited" to see access from above.' }));
+  out.append(list);
+}
+
+// ---------- start ----------
+show(location.hash.slice(1));
+const r0 = ROLE.find(r => r.name === 'VP for Sports'); if (r0) showRole(r0.i);
+const o0 = ORG.find(o => o.name === 'Aikido'); if (o0) { curOrg = o0.i; renderOrg(); }
+</script>
+</body>
+</html>

@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sitemap / Grouping Visualizer (CSV & Excel)</title>
+  <!-- D3.js, PapaParse (CSV), and SheetJS (XLSX / XLS) -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #17181c; /* GlooMaps Dark Canvas */
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Top Action Bar */
+    header {
+      background: #111215;
+      border-bottom: 1px solid #292a2e;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 10;
+      flex-wrap: wrap;
+    }
+    .brand-tag {
+      font-weight: 700;
+      font-size: 15px;
+      color: #10b981;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-right: 8px;
+    }
+    .file-input-wrapper {
+      position: relative;
+      display: inline-block;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    .btn {
+      background: #2563eb;
+      color: white;
+      padding: 7px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 13px;
+      display: inline-block;
+      transition: all 0.15s ease;
+      border: 1px solid transparent;
+      user-select: none;
+    }
+    .btn:hover {
+      background: #1d4ed8;
+    }
+    .btn-secondary {
+      background: #23252b;
+      color: #cbd5e1;
+      border-color: #374151;
+    }
+    .btn-secondary:hover {
+      background: #2e323b;
+    }
+    .btn-filter-active {
+      background: #065f46;
+      color: #6ee7b7;
+      border-color: #10b981;
+    }
+    .btn-filter-active:hover {
+      background: #047857;
+    }
+    .stats {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-left: auto;
+    }
+
+    /* Canvas / Viewport */
+    #chart-container {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+    }
+    svg:active {
+      cursor: grabbing;
+    }
+
+    /* Orthogonal Elbow Connectors */
+    .link {
+      fill: none;
+      stroke: #383a42;
+      stroke-width: 1.5px;
+    }
+
+    /* Node Cards */
+    .node {
+      cursor: pointer;
+    }
+    .node rect.card-bg {
+      fill: #22252a;
+      stroke: #333740;
+      stroke-width: 1.2px;
+      rx: 4px;
+      transition: stroke 0.2s, fill 0.2s;
+    }
+    .node:hover rect.card-bg {
+      stroke: #ffffff;
+    }
+
+    .node.root rect.card-bg {
+      fill: #1d2026;
+      stroke: #475569;
+    }
+
+    .node.is-deleted rect.card-bg {
+      fill: #261e20 !important;
+      stroke: #ef4444 !important;
+      stroke-dasharray: 3, 3;
+      opacity: 0.85;
+    }
+    .node.is-deleted text {
+      fill: #fca5a5 !important;
+    }
+
+    .node text {
+      font-size: 11px;
+      fill: #e2e8f0;
+      text-anchor: middle;
+      dominant-baseline: central;
+      pointer-events: none;
+      font-weight: 500;
+    }
+    .node .node-subtitle {
+      font-size: 9.5px;
+      fill: #94a3b8;
+    }
+
+    .collapse-pill {
+      stroke: #111215;
+      stroke-width: 1.5px;
+      transition: all 0.2s;
+    }
+
+    /* Classification Legend Panel */
+    #legend-panel {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: #111216ee;
+      border: 1px solid #282a30;
+      backdrop-filter: blur(8px);
+      border-radius: 8px;
+      padding: 12px 16px;
+      max-height: 380px;
+      width: 250px;
+      overflow-y: auto;
+      z-index: 20;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      display: none;
+    }
+    #legend-panel h4 {
+      margin: 0 0 10px 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #94a3b8;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11.5px;
+      margin-bottom: 6px;
+      color: #cbd5e1;
+    }
+    .legend-color-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Hover Detail Tooltip */
+    #detail-tooltip {
+      position: absolute;
+      display: none;
+      width: 380px;
+      background: #111318;
+      border: 1px solid #2e323b;
+      border-radius: 10px;
+      padding: 16px 18px;
+      color: #f1f5f9;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.7);
+      pointer-events: none;
+      z-index: 100;
+    }
+    .tt-header h3 {
+      margin: 0 0 4px 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+    .tt-breadcrumb {
+      font-size: 12px;
+      color: #60a5fa;
+      margin-bottom: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tt-type-row {
+      font-size: 12px;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .tt-type-row .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .tt-metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .tt-metric-card {
+      background: #191c23;
+      border: 1px solid #272a33;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .tt-metric-card .num {
+      font-size: 20px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.1;
+    }
+    .tt-metric-card .label {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 3px;
+    }
+
+    .tt-inside-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 10px;
+    }
+    .tt-bar-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+      font-size: 11.5px;
+    }
+    .tt-bar-label {
+      width: 120px;
+      color: #cbd5e1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex-shrink: 0;
+    }
+    .tt-bar-track {
+      flex: 1;
+      height: 8px;
+      background: #20242d;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 0 8px;
+      position: relative;
+    }
+    .tt-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+    }
+    .tt-bar-count {
+      width: 28px;
+      text-align: right;
+      color: #94a3b8;
+      font-size: 11px;
+    }
+
+    .empty-state {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #94a3b8;
+    }
+    .empty-state code {
+      color: #38bdf8;
+      background: #1e293b;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    
+
+    <label class="btn file-input-wrapper">
+      Upload File (.csv, .xlsx)
+      <input type="file" id="uploadFile" accept=".csv, .xlsx, .xls">
+    </label>
+    <button class="btn btn-secondary" onclick="loadDefaultFile()">Reload Default File</button>
+    <span id="file-name" style="font-size: 13px; color: #94a3b8;">Loading default dataset...</span>
+    
+    <button class="btn btn-secondary btn-filter-active" id="deletedFilterBtn" onclick="toggleHideDeleted()">Hide Deleted: ON</button>
+    <button class="btn btn-secondary" onclick="resetZoom()">Fit View</button>
+    <button class="btn btn-secondary" onclick="toggleAllBranches()">Expand / Collapse All</button>
+    <button class="btn btn-secondary" onclick="toggleLegend()">Toggle Legend</button>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <div id="chart-container">
+    <div class="empty-state" id="empty-state">
+      <h3>Loading default data...</h3>
+      <p>If not loaded automatically, upload <code>MSL Groups.xlsx</code> or <code>.csv</code> above.</p>
+    </div>
+    <svg id="tree-svg"></svg>
+
+    <!-- Legend Panel -->
+    <div id="legend-panel">
+      <h4>Classifications</h4>
+      <div id="legend-list"></div>
+    </div>
+
+    <!-- Hover Detail Tooltip -->
+    <div id="detail-tooltip">
+      <div class="tt-header">
+        <h3 id="tt-title">Group Title</h3>
+        <div class="tt-breadcrumb" id="tt-breadcrumb">Parent > Current</div>
+        <div class="tt-type-row">
+          Type: <span class="dot" id="tt-dot"></span> <span id="tt-type">Folder</span> · ID <span id="tt-id">12345</span>
+        </div>
+      </div>
+      <div class="tt-metrics">
+        <div class="tt-metric-card">
+          <div class="num" id="tt-direct">0</div>
+          <div class="label">direct children</div>
+        </div>
+        <div class="tt-metric-card">
+          <div class="num" id="tt-descendants">0</div>
+          <div class="label">all descendants</div>
+        </div>
+      </div>
+      <div class="tt-inside-title">What's inside</div>
+      <div id="tt-bars"></div>
+    </div>
+  </div>
+
+  <script>
+    const svg = d3.select("#tree-svg");
+    const gContainer = svg.append("g");
+    let zoomBehavior;
+    let rootNode = null;
+    let allExpanded = false;
+    let nodeIndex = 0;
+
+    // Filter & parsed rows in memory
+    let rawTableData = [];
+    let hideDeleted = true;
+
+    const CARD_W = 124;
+    const CARD_H = 46;
+    const SIBLING_GAP_X = 140;
+    const LEVEL_GAP_Y = 70;
+
+    const TYPE_PALETTE = {
+      "exec membership": "#d97706",
+      "membership": "#ea580c",
+      "dynamic list": "#7c3aed",
+      "core roles": "#e11d48",
+      "sports club": "#db2777",
+      "society": "#2563eb",
+      "association": "#ca8a04",
+      "representation group": "#16a34a",
+      "academic rep": "#0284c7",
+      "folder": "#c026d3",
+      "signup list": "#059669",
+      "data parameter value group": "#475569",
+      "list": "#4f46e5",
+      "role": "#0891b2",
+      "team": "#15803d",
+      "organisation": "#9333ea"
+    };
+    const FALLBACK_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316"];
+
+    function getColorForType(type) {
+      if (!type) return "#64748b";
+      const key = String(type).trim().toLowerCase();
+      if (TYPE_PALETTE[key]) return TYPE_PALETTE[key];
+      let hash = 0;
+      for (let i = 0; i < key.length; i++) hash = key.charCodeAt(i) + ((hash << 5) - hash);
+      return FALLBACK_COLORS[Math.abs(hash) % FALLBACK_COLORS.length];
+    }
+
+    // Zoom setup
+    zoomBehavior = d3.zoom().scaleExtent([0.15, 3]).on("zoom", (event) => {
+      gContainer.attr("transform", event.transform);
+    });
+    svg.call(zoomBehavior);
+
+    function resetZoom() {
+      if (!rootNode) return;
+      svg.transition().duration(400).call(
+        zoomBehavior.transform,
+        d3.zoomIdentity.translate(window.innerWidth / 2, 75).scale(0.9)
+      );
+    }
+
+    // Auto-load default dataset on startup (supports MSL Groups.xlsx and MSL Groups.csv)
+    async function loadDefaultFile() {
+      document.getElementById("file-name").textContent = "Loading MSL Groups.xlsx...";
+      try {
+        const res = await fetch("MSL Groups.xlsx");
+        if (!res.ok) throw new Error("MSL Groups.xlsx not found");
+        const buf = await res.arrayBuffer();
+        const workbook = XLSX.read(new Uint8Array(buf), { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        rawTableData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+        document.getElementById("file-name").textContent = "MSL Groups.xlsx (Default)";
+        document.getElementById("empty-state").style.display = "none";
+        updateFilterButtonLabel();
+        processAndRender();
+      } catch (err) {
+        // Fallback: try MSL Groups.csv if .xlsx is unavailable
+        try {
+          const csvRes = await fetch("MSL Groups.csv");
+          if (!csvRes.ok) throw new Error("CSV fallback not found");
+          const csvText = await csvRes.text();
+          Papa.parse(csvText, {
+            header: true,
+            skipEmptyLines: true,
+            dynamicTyping: true,
+            complete: function (results) {
+              rawTableData = results.data;
+              document.getElementById("file-name").textContent = "MSL Groups.csv (Default)";
+              document.getElementById("empty-state").style.display = "none";
+              updateFilterButtonLabel();
+              processAndRender();
+            }
+          });
+        } catch (csvErr) {
+          document.getElementById("file-name").textContent = "No default file found";
+          document.getElementById("empty-state").innerHTML = `
+            
+          `;
+          document.getElementById("empty-state").style.display = "block";
+        }
+      }
+    }
+
+    // User File Upload handler for custom files (.xlsx, .xls, .csv)
+    document.getElementById("uploadFile").addEventListener("change", function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      document.getElementById("file-name").textContent = file.name;
+      document.getElementById("empty-state").style.display = "none";
+
+      const ext = file.name.split('.').pop().toLowerCase();
+
+      if (ext === "xlsx" || ext === "xls") {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          rawTableData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+          updateFilterButtonLabel();
+          processAndRender();
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        // CSV Parsing via PapaParse
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          dynamicTyping: true,
+          complete: function (results) {
+            rawTableData = results.data;
+            updateFilterButtonLabel();
+            processAndRender();
+          }
+        });
+      }
+    });
+
+    function toggleHideDeleted() {
+      hideDeleted = !hideDeleted;
+      updateFilterButtonLabel();
+      if (rawTableData.length > 0) processAndRender();
+    }
+
+    function toggleLegend() {
+      const panel = document.getElementById("legend-panel");
+      panel.style.display = panel.style.display === "block" ? "none" : "block";
+    }
+
+    function updateFilterButtonLabel() {
+      const btn = document.getElementById("deletedFilterBtn");
+      if (hideDeleted) {
+        btn.textContent = "Hide Deleted: ON";
+        btn.classList.add("btn-filter-active");
+      } else {
+        btn.textContent = "Hide Deleted: OFF";
+        btn.classList.remove("btn-filter-active");
+      }
+    }
+
+    function isRowDeleted(row) {
+      const val = row.is_deleted ?? row.deleted ?? row.isDeleted ?? row.IsDeleted;
+      if (val === undefined || val === null) return false;
+      const strVal = String(val).trim().toLowerCase();
+      return strVal === "1" || strVal === "1.0" || strVal === "true" || strVal === "yes";
+    }
+
+    function processAndRender() {
+      const rawMap = new Map();
+      let totalDeletedCount = 0;
+      const observedTypes = new Set();
+
+      rawTableData.forEach(row => {
+        const id = String(row.grouping_id ?? row.id ?? "").trim();
+        let parentId = row.parent_grouping_id !== null && row.parent_grouping_id !== undefined
+          ? String(row.parent_grouping_id).trim()
+          : "";
+        
+        if (parentId === "0" || parentId === "0.0" || parentId === "null" || parentId === id) {
+          parentId = "";
+        }
+
+        const title = row.grouping_name || row.title || row.name || `ID: ${id}`;
+        const type = row.grouping_type || row.category_name || "";
+        const parentName = row.parent_grouping_name || "";
+        const deleted = isRowDeleted(row);
+
+        if (type) observedTypes.add(type);
+        if (deleted) totalDeletedCount++;
+
+        if (id) {
+          rawMap.set(id, {
+            id,
+            parentId,
+            title,
+            type,
+            parentName,
+            isDeleted: deleted,
+            children: []
+          });
+        }
+      });
+
+      populateLegend(Array.from(observedTypes));
+
+      // Resolve parent references around deleted ancestors
+      const nodeMap = new Map();
+
+      rawMap.forEach((node, id) => {
+        if (hideDeleted && node.isDeleted) return;
+
+        let effectiveParentId = node.parentId;
+        if (hideDeleted) {
+          const visited = new Set();
+          while (effectiveParentId && rawMap.has(effectiveParentId)) {
+            if (visited.has(effectiveParentId)) break;
+            visited.add(effectiveParentId);
+
+            const parentNode = rawMap.get(effectiveParentId);
+            if (!parentNode.isDeleted) break;
+            effectiveParentId = parentNode.parentId;
+          }
+        }
+
+        nodeMap.set(id, {
+          ...node,
+          parentId: effectiveParentId,
+          children: []
+        });
+      });
+
+      // Group into tree
+      const roots = [];
+      const orphanBranches = [];
+
+      nodeMap.forEach(node => {
+        if (!node.parentId) {
+          roots.push(node);
+        } else if (nodeMap.has(node.parentId)) {
+          nodeMap.get(node.parentId).children.push(node);
+        } else {
+          orphanBranches.push(node);
+        }
+      });
+
+      if (orphanBranches.length > 0) {
+        roots.push({
+          id: "virtual_orphans_folder",
+          title: "Detached / Orphans",
+          type: "Folder",
+          parentName: "Root",
+          children: orphanBranches,
+          isDeleted: false
+        });
+      }
+
+      let hierarchyData;
+      if (roots.length === 1) {
+        hierarchyData = roots[0];
+      } else {
+        hierarchyData = {
+          id: "virtual_master_root",
+          title: "Root Overview",
+          type: "Folder",
+          parentName: "",
+          children: roots,
+          isDeleted: false
+        };
+      }
+
+      document.getElementById("stats").textContent = 
+        `Visible: ${nodeMap.size} | Total: ${rawTableData.length} (${totalDeletedCount} deleted)`;
+
+      renderTree(hierarchyData);
+    }
+
+    function populateLegend(types) {
+      const container = document.getElementById("legend-list");
+      container.innerHTML = "";
+      types.sort().forEach(type => {
+        const item = document.createElement("div");
+        item.className = "legend-item";
+        item.innerHTML = `
+          <div class="legend-color-dot" style="background: ${getColorForType(type)};"></div>
+          <span>${type}</span>
+        `;
+        container.appendChild(item);
+      });
+      document.getElementById("legend-panel").style.display = "block";
+    }
+
+    function renderTree(data) {
+      rootNode = d3.hierarchy(data, d => d.children);
+      rootNode.x0 = 0;
+      rootNode.y0 = 0;
+
+      if (rootNode.children) {
+        rootNode.children.forEach(foldBranchRecursively);
+      }
+      allExpanded = false;
+
+      update(rootNode);
+      resetZoom();
+    }
+
+    function foldBranchRecursively(n) {
+      if (n.children) {
+        n._children = n.children;
+        n._children.forEach(foldBranchRecursively);
+        n.children = null;
+      }
+    }
+
+    function toggleNode(event, d) {
+      event.stopPropagation();
+      if (d.children) {
+        d._children = d.children;
+        d.children = null;
+      } else if (d._children) {
+        d.children = d._children;
+        d._children = null;
+      }
+      update(d);
+    }
+
+    function toggleAllBranches() {
+      if (!rootNode) return;
+      allExpanded = !allExpanded;
+
+      function recurse(n) {
+        if (allExpanded) {
+          if (n._children) {
+            n.children = n._children;
+            n._children = null;
+          }
+        } else {
+          if (n.children && n.depth > 0) {
+            n._children = n.children;
+            n.children = null;
+          }
+        }
+        if (n.children) n.children.forEach(recurse);
+        if (n._children) n._children.forEach(recurse);
+      }
+      recurse(rootNode);
+      update(rootNode);
+    }
+
+    function update(source) {
+      const treeLayout = d3.tree().nodeSize([SIBLING_GAP_X, LEVEL_GAP_Y]);
+      const treeData = treeLayout(rootNode);
+      const nodes = treeData.descendants();
+      const links = treeData.links();
+
+      // Links
+      const link = gContainer.selectAll("path.link")
+        .data(links, d => d.target.id || (d.target.id = ++nodeIndex));
+
+      const linkEnter = link.enter().insert("path", "g")
+        .attr("class", "link")
+        .attr("d", () => {
+          const o = { x: source.x0, y: source.y0 };
+          return elbowPath({ source: o, target: o });
+        });
+
+      link.merge(linkEnter).transition().duration(350).attr("d", elbowPath);
+
+      link.exit().transition().duration(350)
+        .attr("d", () => {
+          const o = { x: source.x, y: source.y };
+          return elbowPath({ source: o, target: o });
+        })
+        .remove();
+
+      // Nodes
+      const node = gContainer.selectAll("g.node")
+        .data(nodes, d => d.id || (d.id = ++nodeIndex));
+
+      const nodeEnter = node.enter().append("g")
+        .attr("class", d => `node ${d.depth === 0 ? "root" : ""} ${d.data.isDeleted ? "is-deleted" : ""}`)
+        .attr("transform", () => `translate(${source.x0},${source.y0})`)
+        .on("click", toggleNode)
+        .on("mouseenter", showTooltip)
+        .on("mouseleave", hideTooltip);
+
+      nodeEnter.append("rect")
+        .attr("class", "card-bg")
+        .attr("x", -CARD_W / 2)
+        .attr("y", -CARD_H / 2)
+        .attr("width", CARD_W)
+        .attr("height", CARD_H);
+
+      nodeEnter.append("path")
+        .attr("class", "card-accent")
+        .attr("d", `M ${-CARD_W/2 + 4} ${-CARD_H/2} H ${CARD_W/2 - 4}`)
+        .attr("stroke", d => getColorForType(d.data.type))
+        .attr("stroke-width", 3);
+
+      nodeEnter.append("text")
+        .attr("dy", d => (d.data.type || d.data.isDeleted) ? "-4" : "0")
+        .text(d => truncate(d.data.title, 16));
+
+      nodeEnter.append("text")
+        .attr("class", "node-subtitle")
+        .attr("dy", "10")
+        .text(d => d.data.isDeleted ? "(Deleted)" : truncate(d.data.type, 18));
+
+      nodeEnter.append("circle")
+        .attr("class", "collapse-pill")
+        .attr("cy", CARD_H / 2)
+        .attr("fill", d => getColorForType(d.data.type))
+        .attr("r", 0);
+
+      const nodeUpdate = node.merge(nodeEnter).transition().duration(350)
+        .attr("transform", d => `translate(${d.x},${d.y})`);
+
+      nodeUpdate.select(".collapse-pill")
+        .attr("r", d => (d._children ? 4 : 0));
+
+      const nodeExit = node.exit().transition().duration(350)
+        .attr("transform", () => `translate(${source.x},${source.y})`)
+        .remove();
+
+      nodeExit.select(".card-bg").style("opacity", 0);
+
+      nodes.forEach(d => {
+        d.x0 = d.x;
+        d.y0 = d.y;
+      });
+    }
+
+    function elbowPath(d) {
+      const startX = d.source.x;
+      const startY = d.source.y + CARD_H / 2;
+      const endX = d.target.x;
+      const endY = d.target.y - CARD_H / 2;
+      const midY = startY + (endY - startY) / 2;
+
+      return `M ${startX} ${startY}
+              V ${midY}
+              H ${endX}
+              V ${endY}`;
+    }
+
+    function truncate(str, max) {
+      if (!str) return "";
+      return str.length > max ? str.substring(0, max - 1) + "…" : str;
+    }
+
+    // Hover Tooltip
+    const tooltip = document.getElementById("detail-tooltip");
+
+    function showTooltip(event, d) {
+      const data = d.data;
+      const color = getColorForType(data.type);
+
+      document.getElementById("tt-title").textContent = data.title;
+      document.getElementById("tt-breadcrumb").textContent = 
+        `${data.parentName || (d.parent ? d.parent.data.title : "Root")} › ${data.title}`;
+      document.getElementById("tt-type").textContent = data.type || "Folder";
+      document.getElementById("tt-id").textContent = data.id;
+      document.getElementById("tt-dot").style.backgroundColor = color;
+
+      const allDirectChildren = (d.children || []).concat(d._children || []);
+      const directCount = allDirectChildren.length;
+
+      const typeCounts = {};
+      let totalDescendants = 0;
+
+      function countAll(node) {
+        const kids = (node.children || []).concat(node._children || []);
+        kids.forEach(k => {
+          totalDescendants++;
+          const t = k.data.type || "Other";
+          typeCounts[t] = (typeCounts[t] || 0) + 1;
+          countAll(k);
+        });
+      }
+      countAll(d);
+
+      document.getElementById("tt-direct").textContent = directCount;
+      document.getElementById("tt-descendants").textContent = totalDescendants;
+
+      const barsContainer = document.getElementById("tt-bars");
+      barsContainer.innerHTML = "";
+
+      const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+
+      if (sortedTypes.length === 0) {
+        barsContainer.innerHTML = `<span style="font-size:12px;color:#64748b;">No nested sub-groups</span>`;
+      } else {
+        const maxVal = sortedTypes[0][1];
+        sortedTypes.slice(0, 7).forEach(([tName, count]) => {
+          const row = document.createElement("div");
+          row.className = "tt-bar-row";
+          const pct = Math.max(8, (count / maxVal) * 100);
+          const tColor = getColorForType(tName);
+
+          row.innerHTML = `
+            <div class="tt-bar-label" title="${tName}">${tName}</div>
+            <div class="tt-bar-track">
+              <div class="tt-bar-fill" style="width: ${pct}%; background: ${tColor};"></div>
+            </div>
+            <div class="tt-bar-count">${count}</div>
+          `;
+          barsContainer.appendChild(row);
+        });
+      }
+
+      tooltip.style.display = "block";
+      positionTooltip(event);
+    }
+
+    function positionTooltip(event) {
+      const pad = 16;
+      let x = event.clientX + pad;
+      let y = event.clientY + pad;
+
+      if (x + 390 > window.innerWidth) {
+        x = event.clientX - 390 - pad;
+      }
+      if (y + 320 > window.innerHeight) {
+        y = window.innerHeight - 330;
+      }
+
+      tooltip.style.left = `${x}px`;
+      tooltip.style.top = `${y}px`;
+    }
+
+    function hideTooltip() {
+      tooltip.style.display = "none";
+    }
+
+    // Run auto-load on initial page start
+    window.addEventListener("DOMContentLoaded", loadDefaultFile);
+  </script>
+</body>
+</html>
